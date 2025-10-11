@@ -2,9 +2,6 @@
 //  PlayerCard.swift
 //  Spindra
 //
-//  Created by Pawel Kowalewski on 11/10/2025.
-//
-
 
 import SwiftUI
 
@@ -14,7 +11,6 @@ struct PlayerCard: View {
     
     var body: some View {
         ZStack {
-            // Card background with gradient
             RoundedRectangle(cornerRadius: 20)
                 .fill(
                     LinearGradient(
@@ -28,7 +24,6 @@ struct PlayerCard: View {
                 )
             
             VStack(spacing: 0) {
-                // Flag and Share button
                 HStack {
                     Image(systemName: "flag.fill")
                         .font(.system(size: 16))
@@ -57,13 +52,11 @@ struct PlayerCard: View {
                 
                 Spacer()
                 
-                // Player name and stats
                 VStack(spacing: 8) {
                     Text("Evelinse Nadal")
                         .font(.system(size: 28, weight: .bold))
                         .foregroundColor(.white)
                     
-                    // Stats row
                     HStack(spacing: 32) {
                         VStack(spacing: 4) {
                             Text("2845")
@@ -126,13 +119,11 @@ struct DailyTrainingCard: View {
                             .stroke(Color.white.opacity(0.2), lineWidth: 1)
                     )
                 
-                // Animated background lines
                 AnimatedCourtLines()
                     .cornerRadius(16)
                     .opacity(0.3)
                 
                 VStack(alignment: .leading, spacing: 16) {
-                    // Header
                     HStack {
                         Text("Daily Training")
                             .font(.system(size: 24, weight: .bold))
@@ -150,13 +141,11 @@ struct DailyTrainingCard: View {
                         }
                     }
                     
-                    // Description
                     Text("Execute all daily trainings to earn your points and climb the ranks.")
                         .font(.system(size: 14))
                         .foregroundColor(.white.opacity(0.7))
                         .lineSpacing(2)
                     
-                    // Progress
                     VStack(spacing: 8) {
                         HStack {
                             Text("2/4")
@@ -201,11 +190,13 @@ struct DailyTrainingCard: View {
 
 // MARK: - Challenge Card
 struct ChallengeCard: View {
+    @EnvironmentObject var appState: AppState
     @ObservedObject private var motion = MotionManager.shared
     
     var body: some View {
         Button {
-            // Open challenge
+            SoundManager.shared.playTapSound()
+            appState.currentScreen = .challenge
         } label: {
             ZStack {
                 RoundedRectangle(cornerRadius: 16)
@@ -216,7 +207,6 @@ struct ChallengeCard: View {
                     )
                 
                 VStack(alignment: .leading, spacing: 16) {
-                    // Header
                     HStack {
                         Text("Challenge")
                             .font(.system(size: 24, weight: .bold))
@@ -234,16 +224,14 @@ struct ChallengeCard: View {
                         }
                     }
                     
-                    // Description
-                    Text("Challenge your other players and see who reigns supreme.")
+                    Text("Practice your forehand with real-time form analysis and feedback.")
                         .font(.system(size: 14))
                         .foregroundColor(.white.opacity(0.7))
                         .lineSpacing(2)
                     
-                    // Progress
                     VStack(spacing: 8) {
                         HStack {
-                            Text("1/4")
+                            Text("Start")
                                 .font(.system(size: 32, weight: .bold))
                                 .foregroundColor(.tennisYellow)
                             
@@ -260,7 +248,7 @@ struct ChallengeCard: View {
                             }
                         }
                         
-                        Text("Today's Challenges Done")
+                        Text("Forehand Challenge")
                             .font(.system(size: 12))
                             .foregroundColor(.white.opacity(0.6))
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -315,7 +303,6 @@ struct TalkToNellyCard: View {
                             .foregroundColor(.white.opacity(0.9))
                             .lineSpacing(2)
                         
-                        // Better Call Nelly text
                         Text("BETTER CALL")
                             .font(.system(size: 16, weight: .black))
                             .foregroundColor(.black.opacity(0.3))
@@ -366,7 +353,6 @@ struct AnimatedCourtLines: View {
             Canvas { context, size in
                 let t = time + timeline.date.timeIntervalSinceReferenceDate * 0.3
                 
-                // Draw animated diagonal lines
                 for i in 0..<20 {
                     let seed = Double(i) * 2.0
                     let speed = 40.0 + sin(seed) * 20.0
@@ -385,11 +371,9 @@ struct AnimatedCourtLines: View {
                         path.move(to: CGPoint(x: x, y: y))
                         path.addLine(to: CGPoint(x: endX, y: endY))
                         
-                        let opacity = 0.2
-                        
                         context.stroke(
                             path,
-                            with: .color(Color.white.opacity(opacity)),
+                            with: .color(Color.white.opacity(0.2)),
                             style: StrokeStyle(lineWidth: 1.0, lineCap: .round)
                         )
                     }

@@ -6,13 +6,33 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		8F6F458A2E9A6855009F9E7F /* Auth in Frameworks */ = {isa = PBXBuildFile; productRef = 8F6F45892E9A6855009F9E7F /* Auth */; };
+		8F6F458C2E9A6855009F9E7F /* Functions in Frameworks */ = {isa = PBXBuildFile; productRef = 8F6F458B2E9A6855009F9E7F /* Functions */; };
+		8F6F458E2E9A6855009F9E7F /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 8F6F458D2E9A6855009F9E7F /* Supabase */; };
+		8F6F45B22E9A6B66009F9E7F /* ElevenLabs in Frameworks */ = {isa = PBXBuildFile; productRef = 8F6F45B12E9A6B66009F9E7F /* ElevenLabs */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		8F6F45632E9A4F87009F9E7F /* Spindra.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Spindra.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		8F6F45AF2E9A6AC6009F9E7F /* Exceptions for "Spindra" folder in "Spindra" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 8F6F45622E9A4F87009F9E7F /* Spindra */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		8F6F45652E9A4F87009F9E7F /* Spindra */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				8F6F45AF2E9A6AC6009F9E7F /* Exceptions for "Spindra" folder in "Spindra" target */,
+			);
 			path = Spindra;
 			sourceTree = "<group>";
 		};
@@ -23,6 +43,10 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				8F6F458C2E9A6855009F9E7F /* Functions in Frameworks */,
+				8F6F458A2E9A6855009F9E7F /* Auth in Frameworks */,
+				8F6F458E2E9A6855009F9E7F /* Supabase in Frameworks */,
+				8F6F45B22E9A6B66009F9E7F /* ElevenLabs in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -65,6 +89,10 @@
 			);
 			name = Spindra;
 			packageProductDependencies = (
+				8F6F45892E9A6855009F9E7F /* Auth */,
+				8F6F458B2E9A6855009F9E7F /* Functions */,
+				8F6F458D2E9A6855009F9E7F /* Supabase */,
+				8F6F45B12E9A6B66009F9E7F /* ElevenLabs */,
 			);
 			productName = Spindra;
 			productReference = 8F6F45632E9A4F87009F9E7F /* Spindra.app */;
@@ -94,6 +122,10 @@
 			);
 			mainGroup = 8F6F455A2E9A4F87009F9E7F;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				8F6F45882E9A6855009F9E7F /* XCRemoteSwiftPackageReference "supabase-swift" */,
+				8F6F45B02E9A6B66009F9E7F /* XCRemoteSwiftPackageReference "elevenlabs-swift-sdk" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 8F6F45642E9A4F87009F9E7F /* Products */;
 			projectDirPath = "";
@@ -256,6 +288,8 @@
 				DEVELOPMENT_TEAM = S32SG859YZ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Spindra/Info.plist;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Camera access needed to analyze your tennis strokes";
 				INFOPLIST_KEY_NSMotionUsageDescription = "Device motion creates interactive card effects";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -290,6 +324,8 @@
 				DEVELOPMENT_TEAM = S32SG859YZ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Spindra/Info.plist;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Camera access needed to analyze your tennis strokes";
 				INFOPLIST_KEY_NSMotionUsageDescription = "Device motion creates interactive card effects";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -336,6 +372,48 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		8F6F45882E9A6855009F9E7F /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/supabase/supabase-swift";
+			requirement = {
+				kind = exactVersion;
+				version = 2.3.1;
+			};
+		};
+		8F6F45B02E9A6B66009F9E7F /* XCRemoteSwiftPackageReference "elevenlabs-swift-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/elevenlabs/elevenlabs-swift-sdk";
+			requirement = {
+				kind = exactVersion;
+				version = 2.0.11;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		8F6F45892E9A6855009F9E7F /* Auth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8F6F45882E9A6855009F9E7F /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Auth;
+		};
+		8F6F458B2E9A6855009F9E7F /* Functions */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8F6F45882E9A6855009F9E7F /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Functions;
+		};
+		8F6F458D2E9A6855009F9E7F /* Supabase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8F6F45882E9A6855009F9E7F /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Supabase;
+		};
+		8F6F45B12E9A6B66009F9E7F /* ElevenLabs */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8F6F45B02E9A6B66009F9E7F /* XCRemoteSwiftPackageReference "elevenlabs-swift-sdk" */;
+			productName = ElevenLabs;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 8F6F455B2E9A4F87009F9E7F /* Project object */;
 }

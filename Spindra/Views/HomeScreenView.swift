@@ -2,9 +2,6 @@
 //  HomeScreenView.swift
 //  Spindra
 //
-//  Created by Pawel Kowalewski on 11/10/2025.
-//
-
 
 import SwiftUI
 
@@ -15,36 +12,44 @@ struct HomeScreenView: View {
     
     var body: some View {
         ZStack {
-            // Tennis court background
+            // Show home content or challenge based on app state
+            if appState.currentScreen == .challenge {
+                ChallengeView()
+                    .transition(.move(edge: .trailing))
+            } else {
+                homeContent
+                    .transition(.move(edge: .leading))
+            }
+        }
+        .animation(.easeInOut(duration: 0.3), value: appState.currentScreen)
+    }
+    
+    private var homeContent: some View {
+        ZStack {
             TennisCourtBackground()
             
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 20) {
-                    // Header
                     HeaderView()
                         .opacity(isVisible ? 1 : 0)
                         .offset(y: isVisible ? 0 : -20)
                         .animation(.easeInOut(duration: 0.5).delay(0.1), value: isVisible)
                     
-                    // Player Card
                     PlayerCard()
                         .opacity(isVisible ? 1 : 0)
                         .offset(y: isVisible ? 0 : 20)
                         .animation(.easeInOut(duration: 0.5).delay(0.2), value: isVisible)
                     
-                    // Daily Training Card
                     DailyTrainingCard()
                         .opacity(isVisible ? 1 : 0)
                         .offset(y: isVisible ? 0 : 20)
                         .animation(.easeInOut(duration: 0.5).delay(0.3), value: isVisible)
                     
-                    // Challenge Card
                     ChallengeCard()
                         .opacity(isVisible ? 1 : 0)
                         .offset(y: isVisible ? 0 : 20)
                         .animation(.easeInOut(duration: 0.5).delay(0.4), value: isVisible)
                     
-                    // Talk to Nelly Card
                     TalkToNellyCard()
                         .opacity(isVisible ? 1 : 0)
                         .offset(y: isVisible ? 0 : 20)
@@ -65,15 +70,12 @@ struct HomeScreenView: View {
 struct TennisCourtBackground: View {
     var body: some View {
         ZStack {
-            // Base dark green
             Color(hex: "#1a3d2e")
                 .ignoresSafeArea()
             
-            // Court lines pattern
             Canvas { context, size in
                 let lineColor = Color.white.opacity(0.1)
                 
-                // Horizontal lines
                 for i in 0...8 {
                     let y = size.height * CGFloat(i) / 8
                     var path = Path()
@@ -82,7 +84,6 @@ struct TennisCourtBackground: View {
                     context.stroke(path, with: .color(lineColor), lineWidth: 1)
                 }
                 
-                // Vertical lines
                 for i in 0...4 {
                     let x = size.width * CGFloat(i) / 4
                     var path = Path()
@@ -92,7 +93,6 @@ struct TennisCourtBackground: View {
                 }
             }
             
-            // Gradient overlay
             LinearGradient(
                 colors: [
                     Color.black.opacity(0.3),
@@ -124,7 +124,6 @@ struct HeaderView: View {
             
             Spacer()
             
-            // Spindra logo text
             HStack(spacing: 4) {
                 Image(systemName: "tennisball.fill")
                     .font(.system(size: 20))
