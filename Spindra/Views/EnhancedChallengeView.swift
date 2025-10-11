@@ -407,31 +407,34 @@ class TennisSceneManager: ObservableObject {
               neck.confidence > 0.3,
               root.confidence > 0.3 else { return }
         
-        // --- IMPROVED DEPTH LOGIC ---
-        // Use body height to estimate user's distance from the camera
+        // Depth calculation
         let bodyHeight = abs(neck.location.y - root.location.y)
-        let referenceHeight: CGFloat = 0.4 // Calibrated for a user ~2m away
-        
-        // Calculate a scale factor based on current vs reference height
+        let referenceHeight: CGFloat = 0.4
         let distanceScale = referenceHeight / max(bodyHeight, 0.1)
-        // Clamp the scale to prevent extreme values if tracking is lost or user is too close/far
         let clampedScale = min(max(distanceScale, 0.6), 2.2)
-        
-        // Map the scale to a Z-depth range. A larger scale means user is further away (more negative Z)
         let z = -1.0 - Float(clampedScale) * 10.1
         
         let x = Float(rightWrist.location.x - 0.5) * 4.0
         let y = Float(rightWrist.location.y - 0.5) * 4.0
         
-        // Set the target position instead of moving the node directly
         targetRacketPosition = SCNVector3(x, y, z)
         currentSwingSpeed = Float(swingSpeed)
         
+        // Better racket orientation using wrist-elbow vector
         if let rightElbow = joints[.rightElbow], rightElbow.confidence > 0.3 {
             let dx = rightWrist.location.x - rightElbow.location.x
             let dy = rightWrist.location.y - rightElbow.location.y
-            let angle = atan2(dy, dx)
-            racketNode?.eulerAngles = SCNVector3(0, 0, Float(angle) + 3 * .pi / 2)
+            
+            // Calculate angle from elbow to wrist
+            let armAngle = atan2(dy, dx)
+            
+            // The racket handle should point AWAY from elbow (toward hand)
+            // So we align the racket's -Y axis (handle direction) with the arm vector
+            racketNode?.eulerAngles = SCNVector3(
+                .pi / 2,           // Base rotation to face forward
+                0,                  // No Y rotation
+                Float(armAngle) + .pi    // Align with arm angle
+            )
         }
     }
     
