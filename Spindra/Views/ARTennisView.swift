@@ -272,6 +272,7 @@ class ARTennisManager: ObservableObject {
     
     init() {
         arView = ARView(frame: .zero)
+        arView.environment.sceneUnderstanding.options.insert(.physics)
         setupAR()
     }
     
@@ -290,15 +291,19 @@ class ARTennisManager: ObservableObject {
     }
     
     private func createRacket() {
-        let headMesh = MeshResource.generateBox(width: 0.28, height: 0.32, depth: 0.02)
-        let handleMesh = MeshResource.generateBox(width: 0.05, height: 0.15, depth: 0.05)
+        let headMesh = MeshResource.generateBox(width: 0.28, height: 0.32, depth: 0.02, cornerRadius: 0.01)
+        let handleMesh = MeshResource.generateCylinder(height: 0.3, radius: 0.018)
         
-        let racketMaterial = SimpleMaterial(color: .blue, isMetallic: true)
-        let handleMaterial = SimpleMaterial(color: .brown, isMetallic: false)
+        var racketMaterial = PhysicallyBasedMaterial()
+        racketMaterial.baseColor = .init(tint: .systemBlue)
+        racketMaterial.metallic = .init(0.9)
+        racketMaterial.roughness = .init(0.2)
+        
+        var handleMaterial = SimpleMaterial(color: .brown, isMetallic: false)
         
         let head = ModelEntity(mesh: headMesh, materials: [racketMaterial])
         let handle = ModelEntity(mesh: handleMesh, materials: [handleMaterial])
-        handle.position.y = -0.235
+        handle.position.y = -0.26
         
         racketEntity = ModelEntity()
         racketEntity?.addChild(head)
@@ -308,27 +313,37 @@ class ARTennisManager: ObservableObject {
     }
     
     func spawnBall() {
+        guard totalBalls - ballsHit < 5 else { return } // Limit active balls
         totalBalls += 1
         
-        let ballMesh = MeshResource.generateSphere(radius: 0.065)
-        let ballMaterial = SimpleMaterial(color: .yellow, isMetallic: false)
+        let ballMesh = MeshResource.generateSphere(radius: 0.033) // Tennis ball radius is ~3.3cm
+        var ballMaterial = PhysicallyBasedMaterial()
+        ballMaterial.baseColor = .init(tint: UIColor(red: 0.8, green: 1.0, blue: 0.0, alpha: 1.0))
+        ballMaterial.roughness = .init(0.8)
+        
         let ball = ModelEntity(mesh: ballMesh, materials: [ballMaterial])
         
+        // --- IMPROVED BALL SPAWNING ---
+        // Spawn ball further away to give it travel time and a sense of depth
         ball.position = SIMD3<Float>(
             Float.random(in: -0.5...0.5),
-            1.2,
-            -2.0
+            1.3,
+            -3.5
         )
         
-        ball.collision = CollisionComponent(shapes: [.generateSphere(radius: 0.065)])
+        ball.collision = CollisionComponent(shapes: [.generateSphere(radius: 0.033)])
         ball.physicsBody = PhysicsBodyComponent(
-            massProperties: .default,
-            material: .default,
+            massProperties: .init(mass: 0.058, inertia: .one), // Tennis ball mass ~58g
+            material: .generate(staticFriction: 0.5, dynamicFriction: 0.4, restitution: 0.75),
             mode: .dynamic
         )
         
         bodyAnchor?.addChild(ball)
         activeBalls.append(ball)
+        
+        // Apply an initial force to propel the ball towards the player
+        let towardPlayerForce = SIMD3<Float>(Float.random(in: -0.1...0.1), -0.2, 3.5)
+        ball.addForce(towardPlayerForce, relativeTo: nil)
         
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
             ball.removeFromParent()
@@ -346,24 +361,22 @@ class ARTennisManager: ObservableObject {
         
         let skeleton = bodyAnchor.skeleton
         
-        guard let rightHandTransform = skeleton.modelTransform(for: ARSkeleton.JointName(rawValue: "right_hand_joint")) else {
-            return
-        }
+        guard let rightHandTransform = skeleton.modelTransform(for: .rightHand) else { return }
         
-        let combinedTransform = matrix_multiply(bodyAnchor.transform, rightHandTransform)
-        let handPosition = SIMD3<Float>(combinedTransform.columns.3.x,
-                                        combinedTransform.columns.3.y,
-                                        combinedTransform.columns.3.z)
-        
+        let handPosition = simd_make_float3(rightHandTransform.columns.3)
         racketEntity?.position = handPosition
         
+        // Use orientation to make racket follow hand angle
+        racketEntity?.orientation = Transform(matrix: rightHandTransform).rotation
+        
         if let lastPos = lastHandPosition {
-            handVelocity = (handPosition - lastPos) * 60
+            // Velocity is displacement over time (assuming 60fps update)
+            handVelocity = (handPosition - lastPos) / (1.0/60.0)
             swingSpeed = length(handVelocity)
         }
         lastHandPosition = handPosition
         
-        detectSwingTypeAndPhase(skeleton: skeleton, bodyAnchor: bodyAnchor)
+        detectSwingTypeAndPhase(skeleton: skeleton)
         checkBallCollisions(racketPosition: handPosition)
         
         if totalBalls > 0 {
@@ -371,37 +384,33 @@ class ARTennisManager: ObservableObject {
         }
     }
     
-    private func detectSwingTypeAndPhase(skeleton: ARSkeleton3D, bodyAnchor: ARBodyAnchor) {
-        guard let rightShoulderTransform = skeleton.modelTransform(for: ARSkeleton.JointName(rawValue: "right_shoulder_1_joint")),
-              let leftShoulderTransform = skeleton.modelTransform(for: ARSkeleton.JointName(rawValue: "left_shoulder_1_joint")),
-              let rightHandTransform = skeleton.modelTransform(for: ARSkeleton.JointName(rawValue: "right_hand_joint")) else {
+    private func detectSwingTypeAndPhase(skeleton: ARSkeleton3D) {
+        guard let rightShoulderPos = skeleton.landmark(for: .rightShoulder),
+              let leftShoulderPos = skeleton.landmark(for: .leftShoulder),
+              let rightHandPos = skeleton.landmark(for: .rightHand) else {
             return
         }
         
-        let rightShoulder = matrix_multiply(bodyAnchor.transform, rightShoulderTransform).columns.3
-        let leftShoulder = matrix_multiply(bodyAnchor.transform, leftShoulderTransform).columns.3
-        let rightHand = matrix_multiply(bodyAnchor.transform, rightHandTransform).columns.3
-        
-        let shoulderMidpoint = (rightShoulder + leftShoulder) / 2
-        let handRelativeX = rightHand.x - shoulderMidpoint.x
+        let shoulderMidpoint = (rightShoulderPos + leftShoulderPos) / 2
+        let handRelativeX = rightHandPos.x - shoulderMidpoint.x
         
         if abs(handRelativeX) > 0.2 {
             currentSwingType = handRelativeX > 0 ? .forehand : .backhand
         }
         
-        if swingSpeed > 2.5 && currentPhase == .backswing {
+        if swingSpeed > 8.0 && (currentPhase == .backswing || currentPhase == .ready) {
             currentPhase = .forward
             feedback = "Accelerating!"
-        } else if swingSpeed > 3.5 && currentPhase == .forward {
+        } else if swingSpeed > 10.0 && currentPhase == .forward {
             currentPhase = .contact
             feedback = "Contact zone!"
-        } else if swingSpeed < 1.0 && currentPhase != .ready {
+        } else if swingSpeed < 4.0 && currentPhase != .ready {
             currentPhase = .followThrough
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 self.currentPhase = .ready
                 self.feedback = "Ready for next ball"
             }
-        } else if swingSpeed < 0.5 && rightHand.y < shoulderMidpoint.y {
+        } else if swingSpeed < 1.0 && rightHandPos.y < shoulderMidpoint.y {
             currentPhase = .backswing
         }
     }
@@ -410,15 +419,22 @@ class ARTennisManager: ObservableObject {
         for (index, ball) in activeBalls.enumerated().reversed() {
             let distance = length(ball.position - racketPosition)
             
-            if distance < 0.2 && swingSpeed > 2.0 {
+            if distance < 0.25 && swingSpeed > 5.0 {
                 ballsHit += 1
                 swingsCompleted += 1
                 
-                let hitDirection = normalize(handVelocity)
-                let impulse = hitDirection * swingSpeed * 0.5
-                ball.addForce(impulse, relativeTo: nil)
+                // --- IMPROVED HIT LOGIC ---
+                var hitDirection = normalize(handVelocity)
+                // Ensure the ball travels away from the player (negative Z in AR space)
+                hitDirection.z = min(hitDirection.z, -0.4)
+                // Add some consistent lift to the ball
+                hitDirection.y = max(hitDirection.y, 0.3)
                 
-                feedback = "Great hit! \(Int(swingSpeed * 10)) mph"
+                let impulseMagnitude = swingSpeed * 0.08 // Adjusted multiplier for realistic physics body
+                let impulse = hitDirection * impulseMagnitude
+                ball.addForce(impulse, relativeTo: ball)
+                
+                feedback = "Great hit! \(Int(swingSpeed * 2.237)) mph" // Convert m/s to mph
                 SoundManager.shared.playSuccessSound()
                 
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
@@ -431,10 +447,21 @@ class ARTennisManager: ObservableObject {
     
     func startSession() {
         feedback = "Get ready - full body in frame"
-        arView.session.run(ARBodyTrackingConfiguration())
+        let config = ARBodyTrackingConfiguration()
+        if ARBodyTrackingConfiguration.isSupported {
+             arView.session.run(config)
+        }
     }
     
     func stopSession() {
         arView.session.pause()
+    }
+}
+
+// Helper to get skeleton landmark positions
+extension ARSkeleton3D {
+    func landmark(for joint: ARSkeleton.JointName) -> SIMD3<Float>? {
+        guard let transform = self.modelTransform(for: joint) else { return nil }
+        return simd_make_float3(transform.columns.3)
     }
 }
