@@ -27,6 +27,8 @@ struct SwingSkeletonView: View {
         case .forward, .contact: return Color(hex: "C4D600")
         case .followThrough: return .green
         case .complete: return .green
+        case .loop:
+            return .red
         }
     }
     

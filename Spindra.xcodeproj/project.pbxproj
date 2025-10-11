@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		8F0F38E42E9AAAD700F9A8A9 /* ARKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8F0F38E32E9AAAD700F9A8A9 /* ARKit.framework */; };
 		8F6F458A2E9A6855009F9E7F /* Auth in Frameworks */ = {isa = PBXBuildFile; productRef = 8F6F45892E9A6855009F9E7F /* Auth */; };
 		8F6F458C2E9A6855009F9E7F /* Functions in Frameworks */ = {isa = PBXBuildFile; productRef = 8F6F458B2E9A6855009F9E7F /* Functions */; };
 		8F6F458E2E9A6855009F9E7F /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 8F6F458D2E9A6855009F9E7F /* Supabase */; };
@@ -14,6 +15,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		8F0F38E32E9AAAD700F9A8A9 /* ARKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ARKit.framework; path = System/Library/Frameworks/ARKit.framework; sourceTree = SDKROOT; };
 		8F6F45632E9A4F87009F9E7F /* Spindra.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Spindra.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -46,6 +48,7 @@
 				8F6F458C2E9A6855009F9E7F /* Functions in Frameworks */,
 				8F6F458A2E9A6855009F9E7F /* Auth in Frameworks */,
 				8F6F458E2E9A6855009F9E7F /* Supabase in Frameworks */,
+				8F0F38E42E9AAAD700F9A8A9 /* ARKit.framework in Frameworks */,
 				8F6F45B22E9A6B66009F9E7F /* ElevenLabs in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -53,10 +56,19 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		8F0F38E22E9AAAD700F9A8A9 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				8F0F38E32E9AAAD700F9A8A9 /* ARKit.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		8F6F455A2E9A4F87009F9E7F = {
 			isa = PBXGroup;
 			children = (
 				8F6F45652E9A4F87009F9E7F /* Spindra */,
+				8F0F38E22E9AAAD700F9A8A9 /* Frameworks */,
 				8F6F45642E9A4F87009F9E7F /* Products */,
 			);
 			sourceTree = "<group>";

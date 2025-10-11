@@ -13,10 +13,13 @@ struct HomeScreenView: View {
     var body: some View {
         ZStack {
             // Show home content or challenge based on app state
-            if appState.currentScreen == .challenge {
-                ChallengeView()
-                    .transition(.move(edge: .trailing))
-            } else {
+            if appState.currentScreen == .arTennis {
+                            ARTennisView()
+                                .transition(.move(edge: .trailing))
+                        } else if appState.currentScreen == .challenge {
+                            EnhancedChallengeView()
+                                .transition(.move(edge: .trailing))
+                        } else {
                 homeContent
                     .transition(.move(edge: .leading))
             }

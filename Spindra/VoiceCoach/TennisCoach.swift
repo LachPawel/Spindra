@@ -267,6 +267,10 @@ class TennisVoiceCoach: ObservableObject {
             
         case .complete:
             return
+            
+        case .loop:
+            message = "Reset to ready position."
+            priority = .info
         }
         
         await queueMessage(PrioritizedMessage(message, priority: priority))
@@ -381,7 +385,7 @@ class TennisVoiceCoach: ObservableObject {
     }
     
     // MARK: - Message Queue Management
-    private func queueMessage(_ message: PrioritizedMessage) async {
+    func queueMessage(_ message: PrioritizedMessage) async {
         // Avoid repetition
         if recentMessages.contains(where: { $0.contains(message.content) || message.content.contains($0) }) {
             return

@@ -28,5 +28,6 @@ class AppState: ObservableObject {
         case home
         case training
         case challenge
+        case arTennis 
     }
 }

@@ -1,3 +1,4 @@
+
 import Foundation
 import Vision
 import CoreGraphics
@@ -8,11 +9,25 @@ class SwingAnalyzer: ObservableObject {
     @Published var formScore: Int = 0
     @Published var estimatedSpeed: Double = 0
     @Published var feedback: String = "Stand sideways to camera"
+    @Published var detectedSwingType: SwingType = .unknown
     
+    // IMPROVEMENT: Public properties for the coach to analyze trends
+    @Published var maxShoulderRotation: Double = 0
+    @Published var hipShoulderSeparation: Double = 0
+    @Published var followThroughComplete: Bool = false
+
+    enum SwingType {
+        case unknown
+        case forehand  // Right-handed: body turns right, left shoulder forward
+        case backhand  // Right-handed: body turns left, right shoulder forward
+    }
+    
+    // IMPROVEMENT: Added a 'loop' phase for more accurate swing modeling.
     enum Phase {
         case ready
         case preparation
         case backswing
+        case loop        // Racquet drops before forward motion
         case forward
         case contact
         case followThrough
@@ -31,34 +46,51 @@ class SwingAnalyzer: ObservableObject {
     private var phaseStartTime: Date = Date()
     private var swingStartTime: Date?
     private var peakAngularVelocity: Double = 0
-    private var maxShoulderRotation: Double = 0
-    private var hipShoulderSeparation: Double = 0
     
-    // Biomechanics tracking
-    private var backswingDepth: Double = 0
-    private var forwardAcceleration: Double = 0
-    private var followThroughComplete: Bool = false
+    // Body orientation tracking
+    private var facingDirection: FacingDirection = .unknown
+    // IMPROVEMENT: Using a dynamic baseline for more robust stance detection.
+    private var shoulderWidthBaseline: CGFloat = 0
+    
+    enum FacingDirection {
+        case unknown
+        case leftProfile   // Left shoulder closer to camera
+        case rightProfile  // Right shoulder closer to camera
+    }
     
     // Confidence threshold
     private let minConfidence: Float = 0.4
     
     func analyzeSwing(_ joints: [VNHumanBodyPoseObservation.JointName: VNRecognizedPoint]) {
-        // Validate required joints with higher confidence
+        // Validate required joints
         guard let rightShoulder = joints[.rightShoulder],
               let leftShoulder = joints[.leftShoulder],
               let rightElbow = joints[.rightElbow],
               let rightWrist = joints[.rightWrist],
               let rightHip = joints[.rightHip],
               let leftHip = joints[.leftHip],
+              let leftWrist = joints[.leftWrist],
               rightShoulder.confidence > minConfidence,
               leftShoulder.confidence > minConfidence,
-              rightElbow.confidence > minConfidence,
-              rightWrist.confidence > minConfidence else {
+              rightHip.confidence > minConfidence,
+              leftHip.confidence > minConfidence,
+              rightWrist.confidence > minConfidence,
+              rightElbow.confidence > minConfidence else {
             feedback = "Position your full body clearly in frame"
             return
         }
         
-        // Calculate smoothed metrics
+        detectFacingDirection(leftShoulder: leftShoulder.location, rightShoulder: rightShoulder.location)
+        
+        if currentPhase == .ready || currentPhase == .preparation {
+            detectSwingType(
+                leftShoulder: leftShoulder.location,
+                rightShoulder: rightShoulder.location,
+                leftWrist: leftWrist.location,
+                rightWrist: rightWrist.location
+            )
+        }
+        
         let shoulderRotation = smoothValue(
             calculateShoulderRotation(leftShoulder: leftShoulder.location, rightShoulder: rightShoulder.location),
             history: &shoulderRotationHistory
@@ -74,16 +106,9 @@ class SwingAnalyzer: ObservableObject {
             history: &wristHeightHistory
         )
         
-        // Calculate advanced metrics
-        let elbowAngle = calculateAngle(
-            point1: rightShoulder.location,
-            vertex: rightElbow.location,
-            point2: rightWrist.location
-        )
-        
         hipShoulderSeparation = abs(shoulderRotation - hipRotation)
         
-        let angularVelocity = abs(shoulderRotation - previousShoulderAngle) / 0.033
+        let angularVelocity = abs(shoulderRotation - previousShoulderAngle) / 0.033 // Assuming ~30fps
         let hipVelocity = abs(hipRotation - previousHipAngle) / 0.033
         
         previousShoulderAngle = shoulderRotation
@@ -93,17 +118,14 @@ class SwingAnalyzer: ObservableObject {
             peakAngularVelocity = angularVelocity
         }
         
-        // Track kinetic chain (hips lead shoulders)
         let kineticChainSync = hipVelocity > angularVelocity && currentPhase == .forward
         
         processSwingPhase(
             shoulderRotation: shoulderRotation,
             hipRotation: hipRotation,
-            elbowAngle: elbowAngle,
             angularVelocity: angularVelocity,
-            hipVelocity: hipVelocity,
-            wristHeight: wristHeight,
             wristPosition: rightWrist.location,
+            elbowPosition: rightElbow.location,
             hipPosition: leftHip.location,
             kineticChainSync: kineticChainSync
         )
@@ -120,94 +142,88 @@ class SwingAnalyzer: ObservableObject {
     private func processSwingPhase(
         shoulderRotation: Double,
         hipRotation: Double,
-        elbowAngle: Double,
         angularVelocity: Double,
-        hipVelocity: Double,
-        wristHeight: Double,
         wristPosition: CGPoint,
+        elbowPosition: CGPoint,
         hipPosition: CGPoint,
         kineticChainSync: Bool
     ) {
+        let rotationMultiplier: Double = (detectedSwingType == .backhand) ? -1.0 : 1.0
+        let adjustedRotation = shoulderRotation * rotationMultiplier
+        
         switch currentPhase {
         case .ready:
-            if abs(shoulderRotation) < 25 && abs(hipRotation) < 20 {
+            if abs(shoulderRotation) > 75 && facingDirection != .unknown { // Player is sideways
                 currentPhase = .preparation
-                feedback = "Good stance! Coil into backswing"
+                let swingName = detectedSwingType == .forehand ? "forehand" : "backhand"
+                feedback = "Ready! Begin your \(swingName) backswing."
                 phaseStartTime = Date()
-            } else {
+            } else if facingDirection == .unknown {
                 feedback = "Face sideways - shoulders at 90° to camera"
             }
             
         case .preparation:
-            if shoulderRotation < -35 && hipRotation < -20 {
+            if abs(adjustedRotation) > 35 && abs(hipRotation) > 15 {
                 currentPhase = .backswing
                 swingStartTime = Date()
-                backswingDepth = shoulderRotation
                 feedback = "Loading... rotate fully"
-            } else if Date().timeIntervalSince(phaseStartTime) > 3.0 {
-                feedback = "Start your backswing - turn shoulders away"
             }
             
         case .backswing:
-            // Track maximum rotation
-            if shoulderRotation < maxShoulderRotation {
-                maxShoulderRotation = shoulderRotation
+            let absRotation = abs(adjustedRotation)
+            if absRotation > abs(maxShoulderRotation) {
+                maxShoulderRotation = adjustedRotation
             }
             
-            // Good backswing depth check
-            if shoulderRotation < -65 {
-                feedback = "Perfect coil! Hip-shoulder separation: \(Int(hipShoulderSeparation))°"
-            } else if shoulderRotation < -50 {
-                feedback = "Good rotation - now accelerate forward"
+            // IMPROVEMENT: Transition to LOOP when wrist drops below elbow (racquet drop)
+            if wristPosition.y > elbowPosition.y + 0.05 { // Screen Y is inverted
+                currentPhase = .loop
+                feedback = "Racquet drop, nice and loose"
+                phaseStartTime = Date()
+            } else if angularVelocity > 15 { // Fallback if loop is missed
+                 currentPhase = .forward
             }
-            
-            // Transition to forward swing: shoulders reversing direction with velocity
-            if angularVelocity > 15 && shoulderRotation > maxShoulderRotation + 5 {
+
+        case .loop:
+            // IMPROVEMENT: Transition to FORWARD when the shoulder starts unwinding with velocity.
+            if angularVelocity > 20 {
                 currentPhase = .forward
                 feedback = "Unwinding! Drive through"
-                forwardAcceleration = angularVelocity
             }
-            
+
         case .forward:
-            // Check kinetic chain
             if kineticChainSync {
                 feedback = "Great kinetic chain! Hips leading"
-            } else if hipVelocity < angularVelocity * 0.7 {
-                feedback = "Accelerating - use your hips more"
-            } else {
-                feedback = "Driving forward!"
             }
             
-            // Contact zone when shoulders pass neutral
-            if shoulderRotation > 15 && angularVelocity > 10 {
+            // IMPROVEMENT: More precise contact zone check (wrist in front of body)
+            let isWristInFront = wristPosition.x < hipPosition.x - 0.1 // For righty, smaller X is in front
+            let inContactZone = (detectedSwingType == .forehand && adjustedRotation < -15) ||
+                               (detectedSwingType == .backhand && adjustedRotation > 15)
+            
+            if inContactZone && isWristInFront && angularVelocity > 10 {
                 currentPhase = .contact
                 feedback = "Contact! Extend through the ball"
             }
             
         case .contact:
-            if shoulderRotation > 40 && wristHeight > hipPosition.y + 0.1 {
+            let passedContactZone = (detectedSwingType == .forehand && adjustedRotation < -40) ||
+                                    (detectedSwingType == .backhand && adjustedRotation > 40)
+            if passedContactZone {
                 currentPhase = .followThrough
                 feedback = "Follow through! Finish high"
-            } else if Date().timeIntervalSince(phaseStartTime) < 0.3 {
-                feedback = "Extend! Stay on target"
             }
             
         case .followThrough:
-            // Complete follow-through: wrist finishes high and across body
-            let finishHigh = wristHeight > hipPosition.y + 0.15
-            let acrossBody = wristPosition.x < hipPosition.x - 0.05
+            let finishHigh = wristPosition.y < hipPosition.y - 0.15 // Higher on screen = smaller Y
+            let acrossBody = abs(wristPosition.x - hipPosition.x) > 0.08
             
             if finishHigh && acrossBody {
                 followThroughComplete = true
                 feedback = "Complete follow-through!"
-            } else if !finishHigh {
-                feedback = "Finish higher with your hand"
-            } else if !acrossBody {
-                feedback = "Follow through across your body"
             }
             
-            // Transition to complete
-            if angularVelocity < 5 || Date().timeIntervalSince(phaseStartTime) > 1.0 {
+            if angularVelocity < 10 || Date().timeIntervalSince(phaseStartTime) > 1.0 {
                 currentPhase = .complete
                 completeSwing()
             }
@@ -218,7 +234,9 @@ class SwingAnalyzer: ObservableObject {
             }
         }
         
-        phaseStartTime = Date()
+        if currentPhase != .complete {
+             phaseStartTime = Date()
+        }
     }
     
     private func completeSwing() {
@@ -231,71 +249,31 @@ class SwingAnalyzer: ObservableObject {
         }
         
         feedback = buildCompletionFeedback()
-        
-        // Reset swing metrics
-        peakAngularVelocity = 0
-        maxShoulderRotation = 0
-        swingStartTime = nil
-        followThroughComplete = false
     }
     
     private func calculateSpeed() -> Double {
-        // More accurate speed: angular velocity * arm length estimate * conversion
-        let armLengthFactor = 0.75 // meters (estimated racquet + arm)
-        let radiansPerSecond = peakAngularVelocity * .pi / 180
-        let metersPerSecond = radiansPerSecond * armLengthFactor
+        let effectiveRadius = 0.6 // meters
+        let radiansPerSecond = peakAngularVelocity * .pi / 180.0
+        let metersPerSecond = radiansPerSecond * effectiveRadius
         let mph = metersPerSecond * 2.237
-        return mph
+        return min(mph, 85.0)
     }
     
     private func calculateFormScore(duration: TimeInterval) -> Int {
         var score = 50
         
-        // Timing (0.7-1.3s optimal)
-        if duration > 0.7 && duration < 1.3 {
-            score += 15
-        } else if duration > 0.6 && duration < 1.5 {
-            score += 8
-        }
-        
-        // Backswing depth
-        if abs(maxShoulderRotation) > 65 {
-            score += 12
-        } else if abs(maxShoulderRotation) > 50 {
-            score += 6
-        }
-        
-        // Hip-shoulder separation (X-factor)
-        if hipShoulderSeparation > 35 {
-            score += 12
-        } else if hipShoulderSeparation > 25 {
-            score += 6
-        }
-        
-        // Speed generation
-        if estimatedSpeed > 50 {
-            score += 10
-        } else if estimatedSpeed > 35 {
-            score += 5
-        }
-        
-        // Follow-through completion
-        if followThroughComplete {
-            score += 11
-        }
+        if duration > 0.7 && duration < 1.3 { score += 15 }
+        if abs(maxShoulderRotation) > 65 { score += 12 }
+        if hipShoulderSeparation > 30 { score += 12 }
+        if estimatedSpeed > 45 { score += 10 }
+        if followThroughComplete { score += 11 }
         
         return min(100, max(0, score))
     }
     
     private func buildCompletionFeedback() -> String {
-        let components = [
-            "Swing #\(swingCount)",
-            formScore >= 80 ? "Excellent!" : formScore >= 65 ? "Good form" : "Form: \(formScore)",
-            "\(Int(estimatedSpeed)) mph",
-            hipShoulderSeparation > 30 ? "Great separation" : nil
-        ].compactMap { $0 }
-        
-        return components.joined(separator: " • ")
+        let swingTypeName = detectedSwingType == .forehand ? "Forehand" : "Backhand"
+        return "\(swingTypeName) #\(swingCount) • \(formScore) Form • \(Int(estimatedSpeed)) mph"
     }
     
     func reset() {
@@ -308,10 +286,57 @@ class SwingAnalyzer: ObservableObject {
         wristHeightHistory.removeAll()
         maxShoulderRotation = 0
         hipShoulderSeparation = 0
+        followThroughComplete = false
+        peakAngularVelocity = 0
+        swingStartTime = nil
     }
     
-    // MARK: - Geometry Helpers
+    // MARK: - Swing Type & Stance Detection
     
+    // IMPROVEMENT: Uses a baseline to more reliably detect a profile/sideways stance.
+    private func detectFacingDirection(leftShoulder: CGPoint, rightShoulder: CGPoint) {
+        let currentWidth = abs(rightShoulder.x - leftShoulder.x)
+
+        if shoulderWidthBaseline == 0 || currentWidth > shoulderWidthBaseline {
+            shoulderWidthBaseline = currentWidth
+        }
+
+        if shoulderWidthBaseline > 0 && currentWidth < shoulderWidthBaseline * 0.75 {
+            if leftShoulder.x < rightShoulder.x {
+                facingDirection = .leftProfile
+            } else {
+                facingDirection = .rightProfile
+            }
+        } else {
+            facingDirection = .unknown
+        }
+    }
+    
+    private func detectSwingType(
+        leftShoulder: CGPoint,
+        rightShoulder: CGPoint,
+        leftWrist: CGPoint,
+        rightWrist: CGPoint
+    ) {
+        guard facingDirection != .unknown else {
+            detectedSwingType = .unknown
+            return
+        }
+        
+        if facingDirection == .leftProfile {
+            detectedSwingType = .forehand // Righty forehand
+        } else if facingDirection == .rightProfile {
+            detectedSwingType = .backhand // Righty backhand
+        } else {
+            detectedSwingType = .unknown
+        }
+
+        if detectedSwingType != .unknown && (currentPhase == .ready || currentPhase == .preparation) {
+            feedback = "Ready for \(detectedSwingType == .forehand ? "forehand" : "backhand")"
+        }
+    }
+    
+    // MARK: - Geometry Helpers (unchanged)
     private func calculateShoulderRotation(leftShoulder: CGPoint, rightShoulder: CGPoint) -> Double {
         let dx = rightShoulder.x - leftShoulder.x
         let dy = rightShoulder.y - leftShoulder.y
@@ -324,20 +349,5 @@ class SwingAnalyzer: ObservableObject {
         let dy = rightHip.y - leftHip.y
         let angle = atan2(dy, dx) * 180 / .pi
         return angle
-    }
-    
-    private func calculateAngle(point1: CGPoint, vertex: CGPoint, point2: CGPoint) -> Double {
-        let vector1 = CGPoint(x: point1.x - vertex.x, y: point1.y - vertex.y)
-        let vector2 = CGPoint(x: point2.x - vertex.x, y: point2.y - vertex.y)
-        
-        let dotProduct = vector1.x * vector2.x + vector1.y * vector2.y
-        let magnitude1 = sqrt(vector1.x * vector1.x + vector1.y * vector1.y)
-        let magnitude2 = sqrt(vector2.x * vector2.x + vector2.y * vector2.y)
-        
-        guard magnitude1 > 0 && magnitude2 > 0 else { return 0 }
-        
-        let cosineAngle = dotProduct / (magnitude1 * magnitude2)
-        let angleRadians = acos(min(max(cosineAngle, -1), 1))
-        return angleRadians * 180 / .pi
     }
 }
