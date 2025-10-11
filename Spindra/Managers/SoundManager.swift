@@ -101,3 +101,37 @@ class SoundManager: ObservableObject {
         playSound(named: "error", volume: 0.7)
     }
 }
+
+// Add these methods to SoundManager.swift
+
+extension SoundManager {
+    func prepareForVoiceCoach() {
+        audioQueue.async {
+            do {
+                let audioSession = AVAudioSession.sharedInstance()
+                try audioSession.setCategory(
+                    .playAndRecord,
+                    mode: .default,
+                    options: [.defaultToSpeaker, .allowBluetooth]
+                )
+                try audioSession.setActive(true)
+                print("✅ Audio session configured for voice coach")
+            } catch {
+                print("❌ Failed to configure voice session: \(error)")
+            }
+        }
+    }
+    
+    func voiceCoachEnded() {
+        audioQueue.async {
+            do {
+                let audioSession = AVAudioSession.sharedInstance()
+                try audioSession.setCategory(.ambient, mode: .default, options: [.mixWithOthers])
+                try audioSession.setActive(true)
+                print("✅ Audio session reset after voice coach")
+            } catch {
+                print("❌ Failed to reset audio: \(error)")
+            }
+        }
+    }
+}

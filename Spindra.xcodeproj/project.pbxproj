@@ -290,6 +290,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Spindra/Info.plist;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Camera access needed to analyze your tennis strokes";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Mic is needed for the voice agent";
 				INFOPLIST_KEY_NSMotionUsageDescription = "Device motion creates interactive card effects";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -326,6 +327,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Spindra/Info.plist;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Camera access needed to analyze your tennis strokes";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Mic is needed for the voice agent";
 				INFOPLIST_KEY_NSMotionUsageDescription = "Device motion creates interactive card effects";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
