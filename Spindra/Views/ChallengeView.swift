@@ -216,6 +216,7 @@ struct ChallengeView: View {
     // MARK: - Setup & Cleanup
     
     private func setupSession() {
+        try? AVAudioSession.sharedInstance().overrideOutputAudioPort(.speaker)
         poseEstimator.swingAnalyzer = swingAnalyzer
         poseEstimator.setupCamera()
         poseEstimator.startSession()

@@ -3,6 +3,10 @@
 <plist version="1.0">
 <dict>
 	<key>ELEVENLABS_AGENT_ID</key>
-	<string>agent_0101k3ert9tnfbcv4ktz8ay8xha7</string>
+	<string>agent_9701k79pkqhmfh98rvk5mrsnnygp</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
 </dict>
 </plist>

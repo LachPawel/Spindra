@@ -1,12 +1,4 @@
 //
-//  TennisCoachingStyle.swift
-//  Spindra
-//
-//  Created by Pawel Kowalewski on 11/10/2025.
-//
-
-
-//
 //  TennisVoiceCoach.swift
 //  Spindra
 //
@@ -14,6 +6,7 @@
 import Combine
 import ElevenLabs
 import SwiftUI
+import AVFoundation
 
 enum TennisCoachingStyle: String, CaseIterable {
     case proCoach = "Pro Coach"
@@ -139,6 +132,9 @@ class TennisVoiceCoach: ObservableObject {
         style: TennisCoachingStyle = .proCoach
     ) async {
         guard !isEnabled else { return }
+        
+        // Configure audio session BEFORE starting conversation
+        configureAudioSession()
         
         self.sessionData = sessionData
         self.coachingStyle = style
@@ -353,6 +349,42 @@ class TennisVoiceCoach: ObservableObject {
         lastMessageTime = .distantPast
     }
     
+    // MARK: - Audio Configuration
+    private func configureAudioSession() {
+        do {
+            let audioSession = AVAudioSession.sharedInstance()
+            
+            // Use playAndRecord category for bidirectional audio
+            try audioSession.setCategory(
+                .playAndRecord,
+                mode: .voiceChat,
+                options: [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP]
+            )
+            
+            // Activate the session
+            try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+            
+            // Set preferred sample rate and buffer duration for better quality
+            try audioSession.setPreferredSampleRate(48000)
+            try audioSession.setPreferredIOBufferDuration(0.005)
+            
+            print("✅ Audio session configured for voice coach")
+        } catch {
+            print("❌ Failed to configure audio session: \(error)")
+        }
+    }
+    
+    private func resetAudioSession() {
+        do {
+            let audioSession = AVAudioSession.sharedInstance()
+            try audioSession.setCategory(.ambient, mode: .default, options: [.mixWithOthers])
+            try audioSession.setActive(true)
+            print("✅ Audio session reset")
+        } catch {
+            print("❌ Failed to reset audio: \(error)")
+        }
+    }
+    
     // MARK: - End Session
     func endSession() async {
         guard let conversation = conversation else { return }
@@ -364,6 +396,11 @@ class TennisVoiceCoach: ObservableObject {
         }
         
         await conversation.endConversation()
+        
+        // Notify SoundManager that voice coach is ending
+        SoundManager.shared.setVoiceCoachActive(false)
+        
+        resetAudioSession()
         
         self.conversation = nil
         isEnabled = false
