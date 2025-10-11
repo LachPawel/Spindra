@@ -106,21 +106,28 @@ class TennisVoiceCoach: ObservableObject {
     private let agentId: String
     private var cancellables = Set<AnyCancellable>()
     
-    // Session tracking
+    // Enhanced session tracking
     private var sessionData: TennisSessionData?
     private var lastPhase: SwingAnalyzer.Phase = .ready
     private var lastSwingCount = 0
     private var lastFormScore = 0
     private var lastSpeed: Double = 0
     
+    // Performance tracking
+    private var averageFormScore: Double = 0
+    private var swingFormScores: [Int] = []
+    private var peakSpeed: Double = 0
+    private var consistencyWindow: [Int] = []
+    
     // Message management
     private var messageQueue: [PrioritizedMessage] = []
     private var isProcessingQueue = false
     private var recentMessages: [String] = []
-    private let maxRecentMessages = 8
+    private let maxRecentMessages = 10
     
-    private let minimumMessageGap: TimeInterval = 2.5
+    private let minimumMessageGap: TimeInterval = 2.0
     private var lastMessageTime: Date = .distantPast
+    private var lastTechniqueAdvice: Date = .distantPast
     
     init(agentId: String) {
         self.agentId = agentId
@@ -133,7 +140,6 @@ class TennisVoiceCoach: ObservableObject {
     ) async {
         guard !isEnabled else { return }
         
-        // Configure audio session BEFORE starting conversation
         configureAudioSession()
         
         self.sessionData = sessionData
@@ -142,7 +148,11 @@ class TennisVoiceCoach: ObservableObject {
         
         resetTracking()
         
-        let initialMessage = "Ready to work on your \(sessionData.swingType.rawValue.lowercased())? Position yourself sideways to the camera, about 6 feet back. Let's see your form."
+        let initialMessage = """
+            Ready to train \(sessionData.swingType.rawValue.lowercased()). 
+            Stand sideways, 6 feet back. I'll guide you through each phase. 
+            Focus on smooth rotation and full follow-through.
+            """
         
         do {
             let config = ConversationConfig(
@@ -150,20 +160,30 @@ class TennisVoiceCoach: ObservableObject {
                     prompt: """
                         \(style.voicePrompt)
                         
-                        You are coaching \(sessionData.playerName) on their \(sessionData.swingType.rawValue).
+                        Coaching \(sessionData.playerName) on \(sessionData.swingType.rawValue).
                         Target: \(sessionData.targetSwings) quality swings.
                         
-                        SWING PHASES: Ready → Preparation → Backswing → Forward → Contact → Follow-through → Complete
+                        PHASES & CUES:
+                        1. Preparation: Unit turn, split step
+                        2. Backswing: Full shoulder rotation (65°+), hip-shoulder separation
+                        3. Forward: Hips initiate, kinetic chain, accelerate
+                        4. Contact: Extension, racquet face control
+                        5. Follow-through: High finish, balance
                         
-                        Focus areas:
-                        - Shoulder rotation (key indicator of power)
-                        - Hip rotation and weight transfer
-                        - Smooth acceleration through contact
-                        - Full follow-through
-                        - Consistent timing and rhythm
+                        KEY METRICS:
+                        - Hip-shoulder separation (X-factor): 30-45° optimal
+                        - Swing timing: 0.7-1.3 seconds
+                        - Form score: 80+ excellent, 65-79 good, <65 needs work
+                        - Speed: 45+ mph good recreational level
                         
-                        Respond to technical data about phases, form scores, and speed.
-                        Be encouraging but focus on technique improvement.
+                        COACHING PRIORITIES:
+                        1. Phase transitions (immediate)
+                        2. Technique issues (form <70, missing mechanics)
+                        3. Encouragement (good swings, progress)
+                        4. Strategy tips (between swings)
+                        
+                        Keep responses 6-15 words. Be specific with technical cues.
+                        Use the metrics provided to give actionable feedback.
                         """,
                     firstMessage: initialMessage
                 ),
@@ -182,7 +202,7 @@ class TennisVoiceCoach: ObservableObject {
             state = .active
             isEnabled = true
             
-            print("✅ Tennis Voice Coach online: \(style.rawValue)")
+            print("✅ Enhanced Tennis Coach active: \(style.rawValue)")
             
         } catch {
             print("❌ Failed to start voice coach: \(error)")
@@ -191,26 +211,25 @@ class TennisVoiceCoach: ObservableObject {
         }
     }
     
-    // MARK: - Process Swing Feedback
+    // MARK: - Enhanced Swing Processing
     func processSwingAnalysis(_ analyzer: SwingAnalyzer) async {
         guard isEnabled else { return }
         
-        // Phase transitions
+        // Phase transitions with detailed feedback
         if analyzer.currentPhase != lastPhase {
             await handlePhaseChange(from: lastPhase, to: analyzer.currentPhase, analyzer: analyzer)
             lastPhase = analyzer.currentPhase
         }
         
-        // Swing completion
+        // Swing completion with analytics
         if analyzer.swingCount > lastSwingCount {
             await handleSwingComplete(analyzer)
             lastSwingCount = analyzer.swingCount
         }
         
-        // Form score changes
-        if analyzer.formScore != lastFormScore && analyzer.formScore > 0 {
-            await handleFormScoreUpdate(analyzer)
-            lastFormScore = analyzer.formScore
+        // Technique feedback during swing
+        if shouldProvideTechniqueFeedback() {
+            await provideTechniqueCues(analyzer)
         }
     }
     
@@ -224,66 +243,147 @@ class TennisVoiceCoach: ObservableObject {
         
         switch newPhase {
         case .ready:
-            return // Skip ready phase messages
+            return
+            
         case .preparation:
-            message = "Phase: Preparation. Get set."
-            priority = .info
+            message = "Set position. Shoulders turned, knees bent."
+            priority = .technique
+            
         case .backswing:
-            message = "Phase: Backswing. Coil those shoulders."
+            message = "Coiling. Load on back foot."
             priority = .technique
+            
         case .forward:
-            message = "Phase: Forward swing. Accelerate!"
+            message = "Uncoil! Drive hips first, then shoulders."
             priority = .critical
+            
         case .contact:
-            message = "Phase: Contact zone!"
+            message = "Contact zone! Extend through."
             priority = .critical
+            
         case .followThrough:
-            message = "Phase: Follow through. Complete the motion."
+            message = "Follow through high and across body."
             priority = .technique
+            
         case .complete:
-            return // Handled by swing complete
+            return
         }
         
         await queueMessage(PrioritizedMessage(message, priority: priority))
     }
     
     private func handleSwingComplete(_ analyzer: SwingAnalyzer) async {
-        let remaining = (sessionData?.targetSwings ?? 20) - analyzer.swingCount
-        let speed = Int(analyzer.estimatedSpeed)
         let score = analyzer.formScore
+        let speed = Int(analyzer.estimatedSpeed)
         
-        let message: String
-        if remaining <= 3 {
-            message = "Swing \(analyzer.swingCount)! \(remaining) more to go! Speed: \(speed) mph, Form: \(score)."
-        } else if remaining <= 10 {
-            message = "That's \(analyzer.swingCount). Form score: \(score). Speed: \(speed) mph."
+        // Track stats
+        swingFormScores.append(score)
+        if swingFormScores.count > 5 {
+            averageFormScore = Double(swingFormScores.suffix(5).reduce(0, +)) / 5.0
+        }
+        
+        if analyzer.estimatedSpeed > peakSpeed {
+            peakSpeed = analyzer.estimatedSpeed
+        }
+        
+        consistencyWindow.append(score)
+        if consistencyWindow.count > 3 {
+            consistencyWindow.removeFirst()
+        }
+        
+        let remaining = (sessionData?.targetSwings ?? 20) - analyzer.swingCount
+        
+        // Build intelligent feedback
+        var message = "Swing \(analyzer.swingCount). "
+        
+        // Performance feedback
+        if score >= 85 {
+            message += "Excellent form! \(score). "
+            if speed > 45 {
+                message += "Great speed: \(speed) mph."
+            }
+        } else if score >= 70 {
+            message += "Good technique. Form \(score), speed \(speed) mph."
         } else {
-            message = "Good swing. Number \(analyzer.swingCount) complete."
+            message += "Form needs work: \(score). "
+            message += await getTechniqueAdvice(score: score)
+        }
+        
+        // Progress check
+        if remaining == 5 {
+            message += " Final 5 swings - maintain quality."
+        } else if remaining == 10 {
+            let avgScore = Int(averageFormScore)
+            message += " Halfway. Average form: \(avgScore)."
         }
         
         await queueMessage(PrioritizedMessage(message, priority: .critical))
+        
+        // Check consistency
+        if consistencyWindow.count >= 3 {
+            let variance = calculateVariance(consistencyWindow)
+            if variance < 10 {
+                await queueMessage(PrioritizedMessage(
+                    "Great consistency! Keep this rhythm.",
+                    priority: .motivation
+                ))
+            }
+        }
     }
     
-    private func handleFormScoreUpdate(_ analyzer: SwingAnalyzer) async {
-        let score = analyzer.formScore
-        let message: String
-        
-        if score >= 90 {
-            message = "Excellent form! Score: \(score). Keep this quality."
-        } else if score >= 75 {
-            message = "Good technique. Score: \(score)."
-        } else if score < 60 {
-            message = "Form score: \(score). Focus on smooth acceleration and full rotation."
+    private func getTechniqueAdvice(score: Int) async -> String {
+        if score < 50 {
+            return "Focus on full shoulder rotation and smooth acceleration."
+        } else if score < 65 {
+            return "Improve hip-shoulder separation and follow-through."
         } else {
-            return // Skip medium scores to avoid spam
+            return "Work on timing and weight transfer."
+        }
+    }
+    
+    private func shouldProvideTechniqueFeedback() -> Bool {
+        return Date().timeIntervalSince(lastTechniqueAdvice) > 12.0 && !isAgentSpeaking
+    }
+    
+    private func provideTechniqueCues(_ analyzer: SwingAnalyzer) async {
+        guard let tip = generateContextualTip(analyzer) else { return }
+        
+        lastTechniqueAdvice = Date()
+        await queueMessage(PrioritizedMessage(tip, priority: .technique))
+    }
+    
+    private func generateContextualTip(_ analyzer: SwingAnalyzer) -> String? {
+        let formScore = analyzer.formScore
+        
+        if formScore > 0 && formScore < 65 {
+            let tips = [
+                "Remember: hips rotate before shoulders for power.",
+                "Keep your eyes on contact point longer.",
+                "Accelerate through contact, don't slow down.",
+                "Finish with hand high above opposite shoulder.",
+                "Load weight on back foot, transfer to front."
+            ]
+            return tips.randomElement()
+        } else if lastSwingCount > 8 && averageFormScore < 75 {
+            return "Between swings: visualize smooth, complete rotation."
         }
         
-        await queueMessage(PrioritizedMessage(message, priority: .technique))
+        return nil
     }
     
-    // MARK: - Message Queue
+    private func calculateVariance(_ values: [Int]) -> Double {
+        guard values.count > 1 else { return 0 }
+        let mean = Double(values.reduce(0, +)) / Double(values.count)
+        let variance = values.reduce(0.0) { sum, value in
+            sum + pow(Double(value) - mean, 2)
+        } / Double(values.count)
+        return sqrt(variance)
+    }
+    
+    // MARK: - Message Queue Management
     private func queueMessage(_ message: PrioritizedMessage) async {
-        if recentMessages.contains(message.content) {
+        // Avoid repetition
+        if recentMessages.contains(where: { $0.contains(message.content) || message.content.contains($0) }) {
             return
         }
         
@@ -292,6 +392,7 @@ class TennisVoiceCoach: ObservableObject {
             recentMessages.removeFirst()
         }
         
+        // Priority insertion
         let insertIndex = messageQueue.firstIndex { $0.priority.rawValue > message.priority.rawValue } ?? messageQueue.count
         messageQueue.insert(message, at: insertIndex)
         
@@ -328,7 +429,7 @@ class TennisVoiceCoach: ObservableObject {
         }
     }
     
-    // MARK: - Control
+    // MARK: - Control Methods
     func toggleMute() async {
         guard let conversation = conversation else { return }
         try? await conversation.toggleMute()
@@ -344,33 +445,31 @@ class TennisVoiceCoach: ObservableObject {
         lastSwingCount = 0
         lastFormScore = 0
         lastSpeed = 0
+        averageFormScore = 0
+        peakSpeed = 0
+        swingFormScores.removeAll()
+        consistencyWindow.removeAll()
         recentMessages.removeAll()
         messageQueue.removeAll()
         lastMessageTime = .distantPast
+        lastTechniqueAdvice = .distantPast
     }
     
     // MARK: - Audio Configuration
     private func configureAudioSession() {
         do {
             let audioSession = AVAudioSession.sharedInstance()
-            
-            // Use playAndRecord category for bidirectional audio
             try audioSession.setCategory(
                 .playAndRecord,
                 mode: .voiceChat,
                 options: [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP]
             )
-            
-            // Activate the session
             try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
-            
-            // Set preferred sample rate and buffer duration for better quality
             try audioSession.setPreferredSampleRate(48000)
             try audioSession.setPreferredIOBufferDuration(0.005)
-            
-            print("✅ Audio session configured for voice coach")
+            print("✅ Audio configured for voice coaching")
         } catch {
-            print("❌ Failed to configure audio session: \(error)")
+            print("❌ Audio setup failed: \(error)")
         }
     }
     
@@ -379,9 +478,8 @@ class TennisVoiceCoach: ObservableObject {
             let audioSession = AVAudioSession.sharedInstance()
             try audioSession.setCategory(.ambient, mode: .default, options: [.mixWithOthers])
             try audioSession.setActive(true)
-            print("✅ Audio session reset")
         } catch {
-            print("❌ Failed to reset audio: \(error)")
+            print("❌ Audio reset failed: \(error)")
         }
     }
     
@@ -390,16 +488,18 @@ class TennisVoiceCoach: ObservableObject {
         guard let conversation = conversation else { return }
         
         if lastSwingCount > 0 {
-            let final = "Session complete! Total swings: \(lastSwingCount). Great work today."
+            let avgScore = swingFormScores.isEmpty ? 0 : swingFormScores.reduce(0, +) / swingFormScores.count
+            let final = """
+                Session complete! \(lastSwingCount) swings. 
+                Average form: \(avgScore). Peak speed: \(Int(peakSpeed)) mph. 
+                Great work today!
+                """
             await sendMessage(final)
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
         }
         
         await conversation.endConversation()
-        
-        // Notify SoundManager that voice coach is ending
         SoundManager.shared.setVoiceCoachActive(false)
-        
         resetAudioSession()
         
         self.conversation = nil
