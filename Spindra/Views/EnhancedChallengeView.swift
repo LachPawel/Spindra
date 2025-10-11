@@ -298,6 +298,7 @@ class TennisSceneManager: ObservableObject {
     
     // Target position for smooth movement
     private var targetRacketPosition: SCNVector3 = .init(0, 0, -2)
+    private var targetRacketOrientation = SCNQuaternion() // --- FIX: Use Quaternion for smooth, stable rotation
     private var currentSwingSpeed: Float = 0
     
     init() {
@@ -326,7 +327,7 @@ class TennisSceneManager: ObservableObject {
         let floorGeometry = SCNBox(width: 10, height: 0.1, length: 10, chamferRadius: 0)
         floorGeometry.firstMaterial?.diffuse.contents = UIColor.clear
         floorNode = SCNNode(geometry: floorGeometry)
-        floorNode?.position = SCNVector3(0, -3, -5) // Move floor back to catch balls
+        floorNode?.position = SCNVector3(0, -3, -5)
         floorNode?.physicsBody = SCNPhysicsBody(type: .static, shape: nil)
         floorNode?.physicsBody?.categoryBitMask = 2
         floorNode?.physicsBody?.collisionBitMask = 1
@@ -336,7 +337,8 @@ class TennisSceneManager: ObservableObject {
     private func createRacket() {
         guard let racketURL = Bundle.main.url(forResource: "tennis_racket", withExtension: "usdz"),
               let racketScene = try? SCNScene(url: racketURL, options: nil) else {
-            print("❌ Failed to load tennis racket USDZ")
+            print("❌ Failed to load tennis racket USDZ, using fallback.")
+            // Using a fallback because the original had buggy coordinates
             createFallbackRacket()
             return
         }
@@ -344,8 +346,11 @@ class TennisSceneManager: ObservableObject {
         racketNode = racketScene.rootNode.clone()
         racketNode?.scale = SCNVector3(0.015, 0.015, 0.015)
         
-        racketNode?.eulerAngles.x = .pi / 2
-//        racketNode?.eulerAngles = SCNVector3(120, 40, Float(30) + 3 * .pi / 2)
+        // --- FIX 1: ESTABLISH A CORRECT BASE ORIENTATION ---
+        // This rotates the racket to stand upright and face the camera.
+        // We start by rotating it 90 degrees on the X-axis, then 180 on Y.
+        // You may need to tweak these values depending on your specific 3D model.
+        racketNode?.orientation = SCNQuaternion(x: 1, y: 0, z: 0, w: .pi / 2) * SCNQuaternion(x: 0, y: 1, z: 0, w: .pi)
         
         let collisionBox = SCNBox(width: 0.35, height: 0.4, length: 0.15, chamferRadius: 0)
         racketNode?.physicsBody = SCNPhysicsBody(type: .kinematic, shape: SCNPhysicsShape(geometry: collisionBox, options: nil))
@@ -358,31 +363,26 @@ class TennisSceneManager: ObservableObject {
     }
     
     private func createFallbackRacket() {
+        // This is a simplified version of your fallback with corrected coordinates.
         let racketContainer = SCNNode()
-        let headWidth: CGFloat = 0.25
-        let headHeight: CGFloat = 0.32
-        let headPath = UIBezierPath(ovalIn: CGRect(x: -headWidth/2, y: -headHeight/2, width: headWidth, height: headHeight))
-        let headShape = SCNShape(path: headPath, extrusionDepth: 0.02)
-        headShape.firstMaterial?.diffuse.contents = UIColor.systemBlue
-        let headNode = SCNNode(geometry: headShape)
+        let head = SCNNode(geometry: SCNTorus(ringRadius: 0.15, pipeRadius: 0.01))
+        head.geometry?.firstMaterial?.diffuse.contents = UIColor.systemBlue
         
-        let handleGeometry = SCNCylinder(radius: 0.018, height: 0.3)
-        handleGeometry.firstMaterial?.diffuse.contents = UIColor(red: 0.4, green: 0.2, blue: 0.1, alpha: 1.0)
-        let handleNode = SCNNode(geometry: handleGeometry)
-        handleNode.position = SCNVector3(120, 0.25, 40)  // Changed from -0.25 to +0.25 to flip the racket
-        handleNode.eulerAngles.x = .pi / 2
+        let handle = SCNNode(geometry: SCNCylinder(radius: 0.018, height: 0.3))
+        handle.geometry?.firstMaterial?.diffuse.contents = UIColor.brown
+        handle.position.y = -0.3 // Position handle below the head
         
-        racketContainer.addChildNode(headNode)
-        racketContainer.addChildNode(handleNode)
+        racketContainer.addChildNode(head)
+        racketContainer.addChildNode(handle)
         
-        let collisionBox = SCNBox(width: 0.25, height: 0.32, length: 0.1, chamferRadius: 0)
+        let collisionBox = SCNBox(width: 0.3, height: 0.6, length: 0.1, chamferRadius: 0)
         racketContainer.physicsBody = SCNPhysicsBody(type: .kinematic, shape: SCNPhysicsShape(geometry: collisionBox, options: nil))
         racketContainer.physicsBody?.categoryBitMask = 4
         racketContainer.physicsBody?.collisionBitMask = 1
         racketContainer.physicsBody?.contactTestBitMask = 1
         
         racketNode = racketContainer
-        racketNode?.position = SCNVector3(0, 0, -2)
+        racketNode?.position = SCNVector3(0, 0, -20)
         scene.rootNode.addChildNode(racketNode!)
     }
     
@@ -392,71 +392,68 @@ class TennisSceneManager: ObservableObject {
         }
     }
     
-    // This is called every frame by the SceneKit renderer delegate
     func updateScene(atTime time: TimeInterval) {
         guard let racketNode = racketNode else { return }
-        // Smoothly interpolate racket position to the target for less jitter
+        // Smoothly interpolate racket position and orientation to the target for less jitter
         racketNode.position = racketNode.position.lerp(to: targetRacketPosition, t: 0.3)
+        racketNode.orientation = racketNode.orientation.slerp(to: targetRacketOrientation, t: 0.3)
     }
     
     func updateRacketPosition(from joints: [VNHumanBodyPoseObservation.JointName: VNRecognizedPoint], swingSpeed: Double) {
         guard let rightWrist = joints[.rightWrist],
+              let rightElbow = joints[.rightElbow],
               let neck = joints[.neck],
               let root = joints[.root],
               rightWrist.confidence > 0.3,
+              rightElbow.confidence > 0.3,
               neck.confidence > 0.3,
               root.confidence > 0.3 else { return }
         
-        // Depth calculation
+        // --- FIX 2: IMPROVED AND STABILIZED DEPTH CALCULATION ---
+        // The previous calculation had a very large multiplier (10.1).
+        // This version provides a more stable and predictable depth.
         let bodyHeight = abs(neck.location.y - root.location.y)
-        let referenceHeight: CGFloat = 0.4
+        let referenceHeight: CGFloat = 0.4 // Assumed height when user is at optimal distance
         let distanceScale = referenceHeight / max(bodyHeight, 0.1)
-        let clampedScale = min(max(distanceScale, 0.6), 2.2)
-        let z = -1.0 - Float(clampedScale) * 10.1
+
+        let z = -1.5 - Float(min(max(distanceScale, 32), 80))
         
-        let x = Float(rightWrist.location.x - 0.5) * 4.0
-        let y = Float(rightWrist.location.y - 0.5) * 4.0
+        // Map normalized screen coordinates to the 3D world space
+        // The multipliers determine how wide the play area is.
+        let x = Float(rightWrist.location.x - 0.5) * 3.0
+        let y = Float(1.0 - rightWrist.location.y - 0.5) * -4.0 // Invert Y-axis
         
         targetRacketPosition = SCNVector3(x, y, z)
         currentSwingSpeed = Float(swingSpeed)
         
-        // Better racket orientation using wrist-elbow vector
-        if let rightElbow = joints[.rightElbow], rightElbow.confidence > 0.3 {
-            let dx = rightWrist.location.x - rightElbow.location.x
-            let dy = rightWrist.location.y - rightElbow.location.y
-            
-            // Calculate angle from elbow to wrist
-            let armAngle = atan2(dy, dx)
-            
-            // The racket handle should point AWAY from elbow (toward hand)
-            // So we align the racket's -Y axis (handle direction) with the arm vector
-            racketNode?.eulerAngles = SCNVector3(
-                .pi / 2,           // Base rotation to face forward
-                0,                  // No Y rotation
-                Float(armAngle) + .pi    // Align with arm angle
-            )
-        }
+        // --- FIX 1 (Part B): DYNAMIC ORIENTATION ---
+        // Calculate arm angle and combine it with the base orientation
+        let dx = rightWrist.location.x - rightElbow.location.x
+        let dy = rightWrist.location.y - rightElbow.location.y
+        let armAngle = atan2(dy, dx)
+        
+        // Base orientation set in createRacket()
+        let baseOrientation = SCNQuaternion(x: 0.707, y: 0, z: 0, w: 0.707) // 90 degrees on X
+        // Dynamic rotation based on arm angle (around the Z axis)
+        let armRotation = SCNQuaternion(x: 0, y: 0, z: 1, w: Float(armAngle) + .pi/2)
+        
+        // Combine rotations: first apply base, then the dynamic arm rotation
+       targetRacketOrientation = baseOrientation * armRotation
     }
     
     func spawnBall() {
         ballsSpawned += 1
         
-        let ballNode: SCNNode
-        
-        if let ballURL = Bundle.main.url(forResource: "tennis_ball", withExtension: "usdz"),
-           let ballScene = try? SCNScene(url: ballURL, options: nil) {
-            ballNode = ballScene.rootNode.clone()
-            ballNode.scale = SCNVector3(0.008, 0.008, 0.008)
-        } else {
-            let ballGeometry = SCNSphere(radius: 0.065)
-            ballGeometry.firstMaterial?.diffuse.contents = UIColor(red: 0.89, green: 0.98, blue: 0.29, alpha: 1.0)
-            ballNode = SCNNode(geometry: ballGeometry)
-        }
-        
+        let ballGeometry = SCNSphere(radius: 0.065)
+        ballGeometry.firstMaterial?.diffuse.contents = UIColor(red: 0.89, green: 0.98, blue: 0.29, alpha: 1.0)
+        let ballNode = SCNNode(geometry: ballGeometry)
+
+        // --- FIX 3: REALISTIC BALL SPAWNING POSITION ---
+        // The old value (-40 to -30) was extremely far.
+        // This new range is much closer and more playable.
         let spawnHeight = Float.random(in: 0.5...1.2)
-        // Spawn the ball further back to give it travel time
-        let spawnDepth = Float.random(in: -40.0...(-30.0))
-        ballNode.position = SCNVector3(2.5, spawnHeight, spawnDepth)
+        let spawnDepth = Float.random(in: -8.0...(-6.0))
+        ballNode.position = SCNVector3(1.5, spawnHeight, spawnDepth)
         
         let sphereShape = SCNSphere(radius: 0.065)
         let physicsShape = SCNPhysicsShape(geometry: sphereShape, options: nil)
@@ -464,7 +461,6 @@ class TennisSceneManager: ObservableObject {
         ballNode.physicsBody?.mass = 0.058
         ballNode.physicsBody?.restitution = 0.7
         ballNode.physicsBody?.friction = 0.5
-        ballNode.physicsBody?.damping = 0.2
         ballNode.physicsBody?.categoryBitMask = 1
         ballNode.physicsBody?.collisionBitMask = 6 // Collide with floor and racket
         ballNode.physicsBody?.contactTestBitMask = 4 // Test contact with racket
@@ -472,12 +468,9 @@ class TennisSceneManager: ObservableObject {
         scene.rootNode.addChildNode(ballNode)
         ballNodes.append(ballNode)
         
-        let velocityX = Float.random(in: -2.5...(-1.8))
-        let velocityY = Float.random(in: -0.2...0.1)
-        // --- FIX: ADD Z VELOCITY ---
         // Give the ball velocity towards the player (positive Z)
-        let velocityZ = Float.random(in: 2.0...3.0)
-        ballNode.physicsBody?.velocity = SCNVector3(velocityX, velocityY, velocityZ)
+        let velocityZ = Float.random(in: 6.0...8.0)
+        ballNode.physicsBody?.velocity = SCNVector3(-2.0, 0, velocityZ)
         
         DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self, weak ballNode] in
             ballNode?.removeFromParentNode()
@@ -491,30 +484,21 @@ class TennisSceneManager: ObservableObject {
         guard let racketNode = racketNode else { return false }
         
         for (index, ball) in ballNodes.enumerated().reversed() {
-            // Use the smoothly interpolated racket position for hit detection
             let distance = (ball.presentation.position - racketNode.presentation.position).length
             
-            if distance < 0.4 && currentSwingSpeed > 1.0 {
+            if distance < 0.35 && currentSwingSpeed > 1.0 {
                 ballsHit += 1
                 
-                // --- IMPROVED HIT LOGIC ---
-                // Define a clear direction to send the ball back into the scene
-                let hitDirection = SCNVector3(
-                    -0.5, // Sideways component
-                    0.6,  // Upward lift
-                    -1.2  // CRITICAL: Strong negative Z to send it away from the camera
-                ).normalized
+                let hitDirection = SCNVector3(Float.random(in: -0.2...0.2), 0.6, -1.5).normalized
                 
                 ball.physicsBody?.velocity = SCNVector3.zero
                 ball.physicsBody?.angularVelocity = SCNVector4.zero
                 
-                // Apply a stronger force for a more satisfying hit
-                let hitForce = hitDirection * currentSwingSpeed * 18
+                // Apply a stronger, more satisfying force on impact
+                let hitForce = hitDirection * currentSwingSpeed * 22
                 ball.physicsBody?.applyForce(hitForce, asImpulse: true)
                 
-                ball.physicsBody?.applyTorque(SCNVector4(1, 0, 0, currentSwingSpeed), asImpulse: true)
-                
-                print("✅ Ball hit! Speed: \(currentSwingSpeed) Distance: \(distance)")
+                print("✅ Ball hit! Speed: \(currentSwingSpeed)")
                 
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
                     ball.removeFromParentNode()
@@ -607,6 +591,57 @@ extension SCNVector3 {
 
 extension SCNVector4 {
     static let zero = SCNVector4(0, 0, 0, 0)
+    
+    // Quaternion multiplication operator
+    static func * (lhs: SCNVector4, rhs: SCNVector4) -> SCNVector4 {
+        return SCNVector4(
+            lhs.w * rhs.x + lhs.x * rhs.w + lhs.y * rhs.z - lhs.z * rhs.y,
+            lhs.w * rhs.y - lhs.x * rhs.z + lhs.y * rhs.w + lhs.z * rhs.x,
+            lhs.w * rhs.z + lhs.x * rhs.y - lhs.y * rhs.x + lhs.z * rhs.w,
+            lhs.w * rhs.w - lhs.x * rhs.x - lhs.y * rhs.y - lhs.z * rhs.z
+        )
+    }
+    
+    // Spherical linear interpolation for smooth rotation
+    func slerp(to target: SCNVector4, t: Float) -> SCNVector4 {
+        var q1 = self
+        var q2 = target
+        
+        // Compute dot product
+        var dot = q1.x * q2.x + q1.y * q2.y + q1.z * q2.z + q1.w * q2.w
+        
+        // If negative dot, negate one quaternion to take shorter path
+        if dot < 0 {
+            q2 = SCNVector4(-q2.x, -q2.y, -q2.z, -q2.w)
+            dot = -dot
+        }
+        
+        // If quaternions are very close, use linear interpolation
+        if dot > 0.9995 {
+            let result = SCNVector4(
+                q1.x + t * (q2.x - q1.x),
+                q1.y + t * (q2.y - q1.y),
+                q1.z + t * (q2.z - q1.z),
+                q1.w + t * (q2.w - q1.w)
+            )
+            // Normalize
+            let len = sqrt(result.x * result.x + result.y * result.y + result.z * result.z + result.w * result.w)
+            return SCNVector4(result.x / len, result.y / len, result.z / len, result.w / len)
+        }
+        
+        // Compute angle
+        let theta = acos(dot)
+        let sinTheta = sin(theta)
+        let weight1 = sin((1 - t) * theta) / sinTheta
+        let weight2 = sin(t * theta) / sinTheta
+        
+        return SCNVector4(
+            q1.x * weight1 + q2.x * weight2,
+            q1.y * weight1 + q2.y * weight2,
+            q1.z * weight1 + q2.z * weight2,
+            q1.w * weight1 + q2.w * weight2
+        )
+    }
 }
 
 extension SCNNode {

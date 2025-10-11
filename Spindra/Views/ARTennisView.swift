@@ -367,7 +367,16 @@ class ARTennisManager: ObservableObject {
         racketEntity?.position = handPosition
         
         // Use orientation to make racket follow hand angle
-        racketEntity?.orientation = Transform(matrix: rightHandTransform).rotation
+        let handOrientation = Transform(matrix: rightHandTransform).rotation
+            
+            // 2. Define an offset to correct the model's alignment.
+            // This rotates the racket 90 degrees on its Z-axis.
+            // You may need to experiment with the axis ([1,0,0] for X, [0,1,0] for Y)
+            // or the angle (.pi for 180 degrees).
+            let rotationOffset = simd_quatf(angle: .pi / 2, axis: [0, 0, 1])
+            
+            // 3. Combine the hand's orientation with your offset
+            racketEntity?.orientation = handOrientation * rotationOffset
         
         if let lastPos = lastHandPosition {
             // Velocity is displacement over time (assuming 60fps update)
